@@ -300,3 +300,188 @@ print("\n" + "="*60)
 print("SUMMARY STATISTICS")
 print("="*60)
 print(summary.to_string(index=False))
+
+# Split the data into train (80%) and test(20%)
+train_size = int(len(data) * 0.8)
+train = data[:train_size]
+test = data[train_size:]
+
+print (f"\nTrain set: {len(train)} observations ({train.index[0].strftime('%Y-%m')} to {train.index[-1].strftime('%Y-%m')})")
+print (f"Test set: {len(test)} observations ({test.index[0].strftime('%Y-%m')} to {test.index[-1].strftime('%Y-%m')})")
+print (f"Test set percentage: {len(test)/len(data) * 100:.1f}%")
+
+# --------------------------------------------------------------------------------------------------------
+# MODEL SELECTION - GRID RESEARCH FOR BEST ARIMA ORDER
+# --------------------------------------------------------------------------------------------------------
+print("\n" + "=" * 70)
+print("SEARCHING FOR OPTIMAL ARIMA PARAMETERS")
+print("=" * 70)
+
+# Grid search for best ARIMA order
+best_aic = np.inf
+best_bic = np.inf
+best_order = None
+best_model = None
+
+# Testing for different combinations
+# We use d = 1 because we know from ADF test that first difference is stationary
+orders_to_test = [
+    (0, 1, 0), # Random walk
+    (1, 1, 0), # AR(1) with differencing
+    (0, 1, 1), # MA(1) with differencing
+    (1, 1, 1), # ARIMA(1,1,1)
+    (2, 1, 0), # AR(2) with differencing
+    (0, 1, 2), # MA(2) with differencing
+    (2, 1, 1), # ARIMA(2,1,1)
+    (1, 1, 2), # ARIMA(1,1,2)
+    (2, 1, 2), # ARIMA(2, 1, 2)
+    (3, 1, 0), # AR(3) with diffencing
+    (0, 1, 3), # MA(3) with differencing
+]
+
+results_list = []
+
+print("\nTesting diffent ARIMA orders...")
+print(f"{'Order':<15} {'AIC':<12} {'BIC':<12} {'Status'}")
+print("-" * 50)
+
+for order in orders_to_test:
+    try:
+        # Fit model
+        model = ARIMA(train['CCLACBM027NBOG'], order = order)
+        fitted = model.fit()
+
+        # Store results
+        results_list.append({
+            'order': order,
+            'aic': fitted.aic,
+            'bic': fitted.bic
+        })
+
+        print(f"{str(order):<15} {fitted.aic:<12.2f} {fitted.bic:<12.2f}  {'✓'}")
+
+    # Track best model by BIC (more conservative)
+        if fitted.bic < best_bic:
+            best_bic = fitted.bic
+            best_aic = fitted.aic
+            best_order = order
+            best_model = fitted
+
+    except Exception as e:
+        print(f"{str(order):<15} {'Failed':<12} {'Failed':<12} {'✗'} - ERROR: {str(e)}")
+        continue
+
+print("\n" + "=" * 70)
+print("BEST MODEL SELECTED")
+print("=" * 70)
+print(f"Best ARIMA order: {best_order}")
+print(f"AIC: {best_aic:.2f}")
+print(f"BIC: {best_bic:.2f}")
+
+# -----------------------------------------------------------------------------------------------------
+# MODEL DIAGNOSTICS
+# -----------------------------------------------------------------------------------------------------
+print("\n" + "=" *70)
+print("MODEL SUMMARY")
+print("=" * 70)
+print(best_model.summary())
+
+plt.close('all')
+# Residuals diagnostics
+residuals = best_model.resid
+
+print("\n" + "=" * 70)
+print("RESIDUAL DIAGNOSTICS")
+print("=" * 70)
+print(f"Mean of residuals: {residuals.mean():.4f}")
+print(f"Std of residuals: {residuals.std():.4f}")
+
+# Plot diagnostics
+fig, axes = plt.subplots(2, 2, figsize = (12, 8))
+
+# Residuals over time
+axes[0, 0].plot(residuals, linewidth = 1)
+axes[0, 0].axhline(y = 0, color = 'red', linestyle = '--', linewidth = 1)
+axes[0, 0].set_title(f'ARIMA{best_order} Residuals', fontsize = 12, fontweight = 'bold')
+axes[0, 0].set_xlabel('Date')
+axes[0, 0].set_ylabel('Residuals')
+axes[0, 0].grid(True, alpha = 0.3)
+
+# Histogram of residuals
+axes[0, 1].hist(residuals, bins = 30, edgecolor = 'black', alpha = 0.7, color = 'steelblue')
+axes[0, 1].set_title('Distribution of Residuals', fontsize = 12, fontweight = 'bold')
+axes[0, 1].set_xlabel('Residuals')
+axes[0, 1].set_ylabel('Frequency')
+axes[0, 1].grid(True, alpha = 0.3)
+
+# ACF of residuals
+from statsmodels.graphics.tsaplots import plot_acf
+plot_acf(residuals, lags = 40, ax = axes[1, 0])
+axes[1, 0].set_title ("ACF of Residuals", fontsize = 12, fontweight = 'bold')
+axes[1, 0].set_ylim(-0.3, 0.3)
+
+# Q-Q plot
+from scipy import stats
+stats.probplot(residuals, dist = 'norm', plot = axes[1, 1])
+axes[1, 1].set_title('Q-Q Plot', fontsize = 12, fontweight = 'bold')
+axes[1, 1].grid(True, alpha = 0.3)
+
+plt.tight_layout()
+plt.show()
+
+# ---------------------------------------------------------------------------
+# ROLLING WINDOW FORECAST
+# ---------------------------------------------------------------------------
+print("\n" + "=" * 70)
+print("GENERATING ONE-STEP-AHEAD FORECASTS")
+print("=" * 70)
+
+# Rolling window forecasts
+arima_forecasts = []
+arima_actuals = []
+
+print(f"Generating {len(test)} one-step-ahead forecasts using rolling window...")
+
+for i in range(len(test)):
+    # Extend training data with observations up to current point
+    train_extended = pd.concat([train, test[:i]])
+
+    # Fit ARIMA model
+    model = ARIMA(train_extended['CCLACBM027NBOG'], order = best_order)
+    fitted = model.fit()
+
+    # One-step-ahead forecast
+    forecast = fitted.forecast(steps = 1)
+    arima_forecasts.append(forecast.iloc[0])
+    arima_actuals.append(test.iloc[i]['CCLACBM027NBOG'])
+    # Progress indicator
+    if (i + 1) % 10 == 0:
+        print(f"Completed {i + 1} / {len(test)} forecasts")
+
+print("Forecasts complete")
+
+# Convert to arrays
+arima_forecasts = np.array(arima_forecasts)
+arima_actuals = np.array(arima_actuals)
+
+# -----------------------------------------------------------------------------------
+# FORECAST EVALUATION METRICS
+# -----------------------------------------------------------------------------------
+print("\n" + "=" * 70)
+print("FORECAST EVALUATION METRICS")
+print("=" * 70)
+
+# Calculate metrics 
+rmse = np.sqrt(mean_squared_error(arima_actuals, arima_forecasts))
+mae = mean_absolute_error(arima_actuals, arima_forecasts)
+mape = np.mean(np.abs((arima_actuals - arima_forecasts) / arima_actuals)) * 100
+mse = mean_squared_error(arima_actuals, arima_forecasts)
+
+print(f"\nARIMA{best_order} Performance:")
+print(f"  RMSE (Root Mean Squared Error): {rmse:.4f} billion dollars")
+print(f"  MAE (Mean Absolute Error): {mae:.4f} billion dollars")
+print(f"  MAPE (Mean Absolute Percentage Error): {mape:.4f}%")
+print(f"  MSE (Mean Squared Error): {mse:.4f}")
+
+
+
