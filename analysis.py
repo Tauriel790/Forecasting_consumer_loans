@@ -492,40 +492,83 @@ print(f"  MSE (Mean Squared Error): {mse:.4f}")
 #-------------------------------------------------------------------------------------------
 plt.close('all')
 
-fig, ax = plt.subplots(3,1, figsize = (14, 14), constrained_layout = True)
-#Plot 1: Full series with forecasts
-ax[0].plot(train.index, train['CCLACBM027NBOG'], label = 'Training Data', color = 'steelblue', linewidth = 2)
-ax[0].plot(test.index, arima_actuals, label = 'Actual Test Data', color = 'black', linewidth = 2)
-ax[0].plot(test.index, arima_forecasts, label = f'ARIMA{best_order} Forecasts', color = 'darkorange', linestyle = '--', linewidth = 2, alpha=0.8)
-ax[0].axvline(x = train.index[-1], color = 'gray', linestyle = ':', linewidth=2)
-ax[0].set_title('Credit Card Loans: ARIMA Forecast vs Actual', fontsize = 14, fontweight = 'bold')
-ax[0].set_ylabel('Billions of Dollars', fontsize = 12)
-ax[0].legend(loc='best', fontsize = 10)
-ax[0].grid(True, alpha = 0.3)
+fig, ax = plt.subplots(3, 1, figsize=(14, 14), constrained_layout=True)
+
+# Plot 1: Full series with forecasts
+ax[0].plot(train.index, train['CCLACBM027NBOG'], label='Training Data', color='steelblue', linewidth=2)
+ax[0].plot(test.index, arima_actuals, label='Actual Test Data', color='black', linewidth=2)
+ax[0].plot(test.index, arima_forecasts, label=f'ARIMA{best_order} Forecasts', color='darkorange', linestyle='--', linewidth=2, alpha=0.8)
+ax[0].axvline(x=train.index[-1], color='gray', linestyle=':', linewidth=2)
+ax[0].set_title('Credit Card Loans: ARIMA Forecast vs Actual', fontsize=14, fontweight='bold')
+ax[0].set_ylabel('Billions of Dollars', fontsize=12)
+ax[0].legend(loc='best', fontsize=10)
+ax[0].grid(True, alpha=0.3)
 
 # Plot 2: Test period zoom-in
-ax[1].plot(test.index, arima_actuals, label = 'Actual', color = 'black', linewidth = 2.5, marker = 'o', markersize = 4)
-ax[1].plot(test.index, arima_forecasts, label = f'ARIMA{best_order} Forecast', color = 'darkorange', linestyle = '--', linewidth = 2, marker = 's', markersize = 4, alpha=0.8)
-ax[1].set_title('Test Period Detailed Comparison', fontsize = 14, fontweight = 'bold')
-ax[1].set_ylabel('Billions of Dollars', fontsize = 12)
-ax[1].legend(loc='best', fontsize = 10)
-ax[1].grid(True, alpha = 0.3)
+ax[1].plot(test.index, arima_actuals, label='Actual', color='black', linewidth=2.5, marker='o', markersize=4)
+ax[1].plot(test.index, arima_forecasts, label=f'ARIMA{best_order} Forecast', color='darkorange', linestyle='--', linewidth=2, marker='s', markersize=4, alpha=0.8)
+ax[1].set_title('Test Period Detailed Comparison', fontsize=14, fontweight='bold')
+ax[1].set_ylabel('Billions of Dollars', fontsize=12)
+ax[1].legend(loc='best', fontsize=10)
+ax[1].grid(True, alpha=0.3)
 
 # Plot 3: Forecast errors
 forecast_errors = arima_actuals - arima_forecasts
-ax[2].plot(test.index, forecast_errors, label = 'Forecast Errors', color = 'red', linewidth = 2, marker = 'o', markersize = 4)
-ax[2].axhline(y = 0, color = 'black', linestyle = '-', linewidth = 1)
-ax[2].set_title('Forecast Errors (Actual - Predicted)', fontsize = 14, fontweight = 'bold')
-ax[2].fill_between(test.index, 0, forecast_errors, alpha=0.3, color = 'red')
-ax[2].set_ylabel('Error (Billions)', fontsize = 12)
-ax[2].set_xlabel('Date', fontsize = 12)
-ax[2].legend(loc='best', fontsize = 10)
-ax[2].grid(True, alpha = 0.3)
+ax[2].plot(test.index, forecast_errors, label='Forecast Errors', color='red', linewidth=2, marker='o', markersize=4)
+ax[2].axhline(y=0, color='black', linestyle='-', linewidth=1)
+ax[2].set_title('Forecast Errors (Actual - Predicted)', fontsize=14, fontweight='bold')
+ax[2].fill_between(test.index, 0, forecast_errors, alpha=0.3, color='red')
+ax[2].set_ylabel('Error (Billions)', fontsize=12)
+ax[2].set_xlabel('Date', fontsize=12)
+ax[2].legend(loc='best', fontsize=10)
+ax[2].grid(True, alpha=0.3)
 
-for ax in axes:
-    ax.tick_params(axis='x', rotation=45)
+# Rotate x-axis labels for all subplots
+for axis in ax:
+    axis.tick_params(axis='x', rotation=45)
 
-plt.tight_layout()
 plt.show()
+
+# ---------------------------------------------------------------------------------------------------------------------
+# SAVE MODEL SUMMARY
+# ---------------------------------------------------------------------------------------------------------------------
+results_df = pd.DataFrame({
+    'Date': test.index,
+    'Actual': arima_actuals,
+    'ARIMA_Forecast': arima_forecasts,
+    'Error': forecast_errors,
+    'Absolute_Error': np.abs(forecast_errors),
+    'Percentage_Error': np.abs(forecast_errors / arima_actuals) * 100
+})
+
+results_df.to_csv('arima_forecast_results.csv', index = False)
+print("n Results saved to 'arima_forecast_results.csv")
+
+# Save model summary
+with open('arima_model_summary.txt', 'w') as f:
+    f.write("="*70 + "\n")
+    f.write("ARIMA MODEL RESULTS\n")
+    f.write("="*70 + "\n\n")
+    f.write(f"Best Model: ARIMA{best_order}\n")
+    f.write(f"AIC: {best_aic:.2f}\n")
+    f.write(f"BIC: {best_bic:.2f}\n\n")
+    f.write("Forecast Performance:\n")
+    f.write(f"  RMSE: {rmse:.4f}\n")
+    f.write(f"  MAE: {mae:.4f}\n")
+    f.write(f"  MAPE: {mape:.4f}%\n\n")
+    f.write("="*70 + "\n")
+    f.write("Full Model Summary:\n")
+    f.write("="*70 + "\n")
+    f.write(str(best_model.summary()))
+
+print("✓ Model summary saved to 'arima_model_summary.txt'")
+
+print("\n" + "="*70)
+print("ARIMA ANALYSIS COMPLETE!")
+print("="*70)
+
+# -------------------------------------------------------------------------------------------------------
+# SARIMA MODEL 
+# -------------------------------------------------------------------------------------------------------
 
 
