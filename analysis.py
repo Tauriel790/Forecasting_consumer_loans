@@ -403,6 +403,7 @@ fig, axes = plt.subplots(2, 2, figsize = (12, 8))
 axes[0, 0].plot(residuals, linewidth = 1)
 axes[0, 0].axhline(y = 0, color = 'red', linestyle = '--', linewidth = 1)
 axes[0, 0].set_title(f'ARIMA{best_order} Residuals', fontsize = 12, fontweight = 'bold')
+
 axes[0, 0].set_xlabel('Date')
 axes[0, 0].set_ylabel('Residuals')
 axes[0, 0].grid(True, alpha = 0.3)
@@ -542,7 +543,7 @@ results_df = pd.DataFrame({
 })
 
 results_df.to_csv('arima_forecast_results.csv', index = False)
-print("n Results saved to 'arima_forecast_results.csv")
+print("\n Results saved to 'arima_forecast_results.csv")
 
 # Save model summary
 with open('arima_model_summary.txt', 'w') as f:
@@ -571,4 +572,93 @@ print("="*70)
 # SARIMA MODEL 
 # -------------------------------------------------------------------------------------------------------
 
+print("\n" + "=" * 80)
+print("SARIMA MODEL IMPLEMENTATION")
+print("=" * 80)
+
+#Check for train and test before
+print(f"\nUsing the same train/test split:")
+print (f"Train set: {len(train)} observations")
+print (f"Test set: {len(test)} observations")
+
+#---------------------------------------------------------------------------------------
+# SARIMA MODEL SELECTION - GRID SEARCH
+#---------------------------------------------------------------------------------------
+print("\n" + "=" * 80)
+print("SEARCHING FOR OPTIMAL SARIMA PARAMETERS")
+print("=" * 80)
+
+best_aic_sarima = np.inf
+best_bic_sarima = np.inf
+best_order_sarima = None
+best_seasonal_order = None
+best_model_sarima = None
+
+# Grid search for best SARIMA order
+# Non-seasonal: (p, d, q) - keep d = 1 from sationarity test
+#Seasonal: (P, D, Q, s) - m = 12 for monthly data 
+
+#Test fewer combinations to save time 
+
+orders_to_test_sarima = [   
+
+    #(p, d, q), (P, D, Q, m)
+    ((0, 1, 1), (1, 0, 1, 12)),  # Based on your ARIMA(0,1,1) + seasonal      
+    ((0, 1, 1), (0, 1, 1, 12)), # Seasonal differencing     
+    ((0, 1, 1), (1, 1, 0, 12)),  # Seasonal AR only     
+    ((1, 1, 0), (1, 0, 1, 12)),  #  AR + seasonal MA     
+    ((1, 1, 1), (1, 0, 1, 12)),  #  Full non-seasonal + seasonal     
+    ((1, 1, 1), (1, 1, 1, 12)),  #  Full model with seasonal diff     
+    ((0, 1, 2), (1, 0, 1, 12)),  #  Higher order MA     
+    ((2, 1, 0), (1, 0, 1, 12)),  #  Higher order AR     
+    ((1, 1, 0), (1, 1, 1, 12)),  #  AR + full seasonal     
+    ((0, 1, 1), (2, 0, 1, 12)),  # Higher seasonal AR 
+    ]
+
+print("\nTesting different SARIMA orders...")
+print(f"{'Non-seasonal':<15} {'Seasonal':<20} {'AIC':<12} {'BIC':<12} {'Status'}")
+print("-" * 75)
+
+for order, seasonal_order in orders_to_test_sarima:
+    try:
+        # Fit SARIMA model
+        model = SARIMAX(train['CCLACBM027NBOG'],
+                        order = order,
+                        seasonal_order = seasonal_order,
+                        enforce_stationarity = False,
+                        enforce_invertibility = False)
+        fitted = model.fit(disp = False, maxiter=200)
+
+        print(f"{str(order):<15} {str(seasonal_order):<20} {fitted.aic:<12.2f} {fitted.bic:<12.2f}  {'✓'}")
+
+        # Track best model by BIC
+        if fitted.bic < best_bic_sarima:
+            best_bic_sarima = fitted.bic
+            best_aic_sarima = fitted.aic
+            best_order_sarima = order
+            best_seasonal_order = seasonal_order
+            best_model_sarima = fitted
+
+    except Exception as e:
+        print(f"{str(order):<15} {str(seasonal_order):<20} {'Failed':<12} {'Failed':<12} {'✗'} ")
+        continue
+
+print("\n" + "=" * 80)
+print("BEST SARIMA MODEL SELECTED")
+print("=" * 80)
+print(f"Best SARIMA order: {best_order_sarima}")
+print(f"Best seasonal order: {best_seasonal_order}")
+print(f"AIC: {best_aic_sarima:.2f}")
+print(f"BIC: {best_bic_sarima:.2f}")
+
+# Comparison with ARIMA
+print("\n" + "=" * 80)
+print("COMPARISON WITH ARIMA")
+print("=" * 80)
+print(f"ARIMA(0, 1, 1) BIC: {best_bic:.2f}")
+print(f"SARIMA{best_order_sarima}{best_seasonal_order} BIC: {best_bic_sarima:.2f}")
+if best_bic_sarima < best_bic:
+    print(f"SARIMA is better by {best_bic - best_bic_sarima:.2f} BIC points.")
+else:
+    print(f"ARIMA still better by {best_bic_sarima - best_bic:.2f} BIC points.")   
 
