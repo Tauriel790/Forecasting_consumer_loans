@@ -828,10 +828,14 @@ else:
 
 # Count which model wins on each metric!!!!!!(NOT NECESSARY)!!!!
 sarima_better_count = 0
-if rmse_sarima < rmse: sarima_better_count += 1
-if mae_sarima < mae: sarima_better_count += 1
-if mape_sarima < mape: sarima_better_count += 1
-if best_bic_sarima < best_bic: sarima_better_count += 1
+if rmse_sarima < rmse: 
+    sarima_better_count += 1
+if mae_sarima < mae: 
+    sarima_better_count += 1
+if mape_sarima < mape: 
+    sarima_better_count += 1
+if best_bic_sarima < best_bic: 
+    sarima_better_count += 1
 
 if sarima_better_count >= 3:
     print("Overall, SARIMA is the superior model for this dataset.")
@@ -898,16 +902,17 @@ axes[2].legend(loc='best', fontsize=10)
 axes[2].grid(True, alpha=0.3)
 
 #Adjust spacing
+
+plt.tight_layout()
 plt.subplots_adjust(
     left=0.08,
     right=0.96,
     top=0.96,
-    bottom=0.03,
+    bottom=0.08,
     hspace=0.70
 
 )
 
-plt.tight_layout()
 plt.show()
 
 #-------------------------------------------------------------------------------------
