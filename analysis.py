@@ -662,3 +662,301 @@ if best_bic_sarima < best_bic:
 else:
     print(f"ARIMA still better by {best_bic_sarima - best_bic:.2f} BIC points.")   
 
+#-------------------------------------------------------------------------------------
+# SARIMA MODEL DIAGNOSTICS
+#-------------------------------------------------------------------------------------
+print("\n" + "=" *80)
+print("SARIMA MODEL SUMMARY")
+print("=" * 80)
+print(best_model_sarima.summary())
+
+# Residual diagnostics
+residuals_sarima = best_model_sarima.resid
+
+print("\n" + "=" * 80)
+print("SARIMA RESIDUAL DIAGNOSTICS")
+print("=" * 80)
+print(f"Mean of residuals: {residuals_sarima.mean():.4f}")
+print(f"Std of residuals: {residuals_sarima.std():.4f}")
+
+# Plot diagnostics
+plt.close('all')
+fig, axes = plt.subplots(2, 2, figsize = (12, 8))
+
+# Residuals over time
+axes[0, 0].plot(residuals_sarima, linewidth = 1)
+axes[0, 0].axhline(y = 0, color = 'red', linestyle = '--', linewidth = 1)
+axes[0, 0].set_title(f'SARIMA{best_order_sarima}{best_seasonal_order} Residuals', 
+                     fontsize = 12, fontweight = 'bold')
+axes[0, 0].set_xlabel('Date')
+axes[0, 0].set_ylabel('Residuals')
+axes[0, 0].grid(True, alpha = 0.3)
+
+# Histogram of residuals
+axes[0, 1].hist(residuals_sarima, bins = 30, edgecolor = 'black', alpha = 0.7, color = 'green')
+axes[0, 1].set_title('Distribution of Residuals', fontsize = 12, fontweight = 'bold')
+axes[0, 1].set_xlabel('Residuals')
+axes[0, 1].set_ylabel('Frequency')
+axes[0, 1].grid(True, alpha = 0.3)
+
+# ACF of residuals
+plot_acf(residuals_sarima, lags = 40, ax = axes[1, 0])
+axes[1, 0].set_title ("ACF of Residuals", fontsize = 12, fontweight = 'bold')
+axes[1, 0].set_ylim(-0.3, 0.3)
+
+# Q-Q plot
+stats.probplot(residuals_sarima, dist = 'norm', plot = axes[1, 1])
+axes[1, 1].set_title('Q-Q Plot', fontsize = 12, fontweight = 'bold')
+axes[1, 1].grid(True, alpha = 0.3)
+
+plt.tight_layout()
+plt.show()
+
+print("\nSARIMA diagnostic plots complete.")
+
+# ---------------------------------------------------------------------------------------
+# SARIMA ONE-STEP-AHEAD FORECASTING
+# ---------------------------------------------------------------------------------------
+
+#SARIMA ROLLING WINDOW FORECAST
+
+print("\n" + "=" * 80)
+print("GENERATING SARIMA ONE-STEP-AHEAD FORECASTS")
+print("=" * 80)
+
+# Rolling window forecasts
+sarima_forecasts = []
+sarima_actuals = []
+
+print(f"Generating {len(test)} one-step-ahead forecasts using rolling window...")
+
+for i in range(len(test)):
+    # Extend training data with observations up to current point
+    train_extended = pd.concat([train, test[:i]])
+
+    # Fit SARIMA model
+    model = SARIMAX(train_extended['CCLACBM027NBOG'],
+                    order = best_order_sarima,
+                    seasonal_order = best_seasonal_order,
+                    enforce_stationarity = False,
+                    enforce_invertibility = False)
+    fitted = model.fit(disp = False, maxiter=200)
+
+    # One-step-ahead forecast
+    forecast = fitted.forecast(steps = 1)
+
+    #Extract scalar values
+    forecast_value = float(forecast.iloc[0])
+    actual_value = float(test.iloc[i]['CCLACBM027NBOG'])
+
+    sarima_forecasts.append(forecast_value)
+    sarima_actuals.append(actual_value)
+
+    # Progress indicator
+    if (i + 1) % 10 == 0:
+        print(f"Completed {i + 1} / {len(test)} forecasts")
+    
+print("SARIMA forecasts complete.")
+
+# Convert to numpy arrays
+sarima_forecasts = np.array(sarima_forecasts)
+sarima_actuals = np.array(sarima_actuals)
+
+#Verify
+print(f"\nSARIMA forecast array shape: {sarima_forecasts.shape}")
+print(f"SARIMA actuals array shape: {sarima_actuals.shape}")
+
+# -----------------------------------------------------------------------------------
+# SARIMA FORECAST EVALUATION 
+# -----------------------------------------------------------------------------------
+
+print("\n" + "=" * 80)
+print("SARIMA FORECAST EVALUATION METRICS")
+print("=" * 80)
+
+# Calculate metrics
+rmse_sarima = np.sqrt(mean_squared_error(sarima_actuals, sarima_forecasts))
+mae_sarima = mean_absolute_error(sarima_actuals, sarima_forecasts)
+mape_sarima = np.mean(np.abs((sarima_actuals - sarima_forecasts) / sarima_actuals)) * 100
+mse_sarima = mean_squared_error(sarima_actuals, sarima_forecasts)
+
+print(f"\nSARIMA{best_order_sarima}{best_seasonal_order} Performance:")
+print(f"  RMSE: {rmse_sarima:.4f} billion dollars")
+print(f"  MAE: {mae_sarima:.4f} billion dollars")
+print(f"  MAPE: {mape_sarima:.4f}%")
+print(f"  MSE: {mse_sarima:.4f}")
+
+# ---------------------------------------------------------------------------------------
+# COMPARE ARIMA vs SARIMA 
+# ---------------------------------------------------------------------------------------
+
+print("\n" + "=" * 80)
+print("ARIMA vs SARIMA COMPARISON")
+print("=" * 80)
+
+comparison_df = pd.DataFrame({
+    'Metric': ['RMSE', 'MAE', 'MAPE (%)', 'MSE'],
+    'ARIMA(0,1,1)': [rmse, mae, mape, mse],
+    f'SARIMA{best_order_sarima}{best_seasonal_order}': [rmse_sarima, mae_sarima, mape_sarima, mse_sarima]
+})
+
+print(comparison_df.to_string(index = False))
+
+# Calculate improvement
+rmse_improvement = ((rmse - rmse_sarima)/rmse) * 100
+mae_improvement = ((mae - mae_sarima)/mae) * 100
+mape_improvement = ((mape - mape_sarima)/mape) * 100
+
+print("\n" + "=" * 80)
+print("IMPROVEMENT OVER ARIMA")
+print("=" * 80)
+if rmse_improvement > 0:
+    print(f"SARIMA improved RMSE by {rmse_improvement:.2f}% over ARIMA.")
+else:
+    print(f"SARIMA RMSE worse by {abs(rmse_improvement):.2f}% compared to ARIMA.")
+
+if mae_improvement > 0:
+    print(f"SARIMA improved MAE by {mae_improvement:.2f}% over ARIMA.")
+else:
+    print(f"SARIMA MAE worse by {abs(mae_improvement):.2f}% compared to ARIMA.")
+
+if mape_improvement > 0:
+    print(f"SARIMA improved MAPE by {mape_improvement:.2f}% over ARIMA.")
+else:
+    print(f"SARIMA MAPE worse by {abs(mape_improvement):.2f}% compared to ARIMA.")
+# -------------------------------------------------------------------------------------
+
+# Count which model wins on each metric!!!!!!(NOT NECESSARY)!!!!
+sarima_better_count = 0
+if rmse_sarima < rmse: sarima_better_count += 1
+if mae_sarima < mae: sarima_better_count += 1
+if mape_sarima < mape: sarima_better_count += 1
+if best_bic_sarima < best_bic: sarima_better_count += 1
+
+if sarima_better_count >= 3:
+    print("Overall, SARIMA is the superior model for this dataset.")
+
+#-------------------------------------------------------------------------------------
+# SARIMA VISUALIZATION
+plt.close('all')
+
+print("\n" + "=" * 80)
+print("GENERATING SARIMA FORECAST PLOTS")
+print("=" * 80)
+
+fig, axes = plt.subplots(3, 1, figsize=(14, 14))
+
+# Plot 1: Full series with both forecasts
+axes[0].plot(train.index, train['CCLACBM027NBOG'],
+            label='Training Data', color='steelblue', linewidth=2, alpha=0.7)
+axes[0].plot(test.index, sarima_actuals,
+            label='Actual Test Data', color='black', linewidth=2.5)
+axes[0].plot(test.index, arima_forecasts,
+             label='ARIMA{best_order} Forecast',linewidth=2, 
+             linestyle='--', color='darkorange', alpha=0.7)
+axes[0].plot(test.index, sarima_forecasts,
+             label=f'SARIMA{best_order_sarima}{best_seasonal_order} Forecast',
+             linewidth=2, linestyle='--', color='green', alpha=0.8)
+axes[0].axvline(x=train.index[-1], color='gray', linestyle=':', linewidth=2)
+axes[0].set_title('Credit Card Loans: ARIMA vs SARIMA Forecasts', 
+                  fontsize=14, fontweight='bold')
+axes[0].set_ylabel('Billions of Dollars', fontsize=12)
+axes[0].legend(loc='best', fontsize=10) 
+axes[0].grid(True, alpha=0.3)
+
+# Plot 2: Test period comparison
+axes[1].plot(test.index, sarima_actuals,
+             label='Actual', color='black', linewidth=2.5, marker='o', markersize=4)
+axes[1].plot(test.index, arima_forecasts,  
+             label='ARIMA Forecast', color='darkorange', linestyle='--',
+             linewidth=2, marker='s', markersize=3, alpha=0.7)
+axes[1].plot(test.index, sarima_forecasts,  
+             label='SARIMA Forecast', color='green', linestyle='--', linewidth =2,
+             marker ='^', markersize=3, alpha=0.8)
+axes[1].set_title('Test Period: ARIMA vs Sarıma Detailed Comparison',
+                  fontsize=14, fontweight='bold')
+axes[1].set_ylabel('Billions of Dollars', fontsize=12)
+axes[1].legend(loc='best', fontsize=10)
+axes[1].grid(True, alpha=0.3)
+
+#Plot 3: Forecast Error Comparison
+arima_errors = arima_actuals - arima_forecasts
+sarima_errors = sarima_actuals - sarima_forecasts
+
+axes[2].plot(test.index, arima_errors,
+             label='ARIMA Error', linewidth=2, color='darkorange',
+             marker='o', markersize=4, alpha=0.7)
+axes[2].plot(test.index, sarima_errors,
+             label='SARIMA Error', linewidth=2, color='green',
+             marker='s', markersize=4, alpha=0.8)
+axes[2].axhline(y=0, color='black', linestyle='-', linewidth=1)
+axes[2].set_title('Forecast Error Comparison (Actual - Predicted)',
+                  fontsize=14, fontweight='bold')
+axes[2].set_xlabel('Date', fontsize=12)
+axes[2].set_ylabel('Error (Billions)', fontsize=12)
+axes[2].legend(loc='best', fontsize=10)
+axes[2].grid(True, alpha=0.3)
+
+#Adjust spacing
+plt.subplots_adjust(
+    left=0.08,
+    right=0.96,
+    top=0.96,
+    bottom=0.03,
+    hspace=0.70
+
+)
+
+plt.tight_layout()
+plt.show()
+
+#-------------------------------------------------------------------------------------
+# SAVE SARIMA RESULTS
+#---------------------------------------------------------------------------------------------------
+
+# Save forecast results
+results_sarima_df = pd.DataFrame({
+    'Date': test.index,
+    'Actual': sarima_actuals,
+    'ARIMA_Forecast': arima_forecasts,
+    'SARIMA_Forecast': sarima_forecasts,
+    'ARIMA_Error': arima_errors,
+    'SARIMA_Error': sarima_errors,
+    'ARIMA_Abs_Error': np.abs(arima_errors),
+    'SARIMA_Abs_Error': np.abs(sarima_errors)
+})
+
+results_sarima_df.to_csv('sarima_comparison_results.csv', index=False)
+print("\nResults are saved to 'sarima_comparison_results.csv'")
+
+#Save model summary
+with open('sarima_model_summary.txt', 'w') as f:
+    f.write("="*80 + "\n")
+    f.write("SARIMA MODEL RESULTS\n")
+    f.write("="*80 + "\n\n")
+    f.write(f"Best SARIMA Model: {best_order_sarima}{best_seasonal_order}\n")
+    f.write(f"AIC: {best_aic_sarima:.2f}\n")
+    f.write(f"BIC: {best_bic_sarima:.2f}\n\n")
+    f.write("Forecast Performance:\n")
+    f.write(f"  RMSE: {rmse_sarima:.4f}\n")
+    f.write(f"  MAE: {mae_sarima:.4f}\n")
+    f.write(f"  MAPE: {mape_sarima:.4f}%\n\n")
+    f.write("="*80 + "\n")
+    f.write("COMPARISON WITH ARIMA(0,1,1):\n")
+    f.write("="*80 + "\n")
+    f.write(f"ARIMA RMSE: 13.9185\n")
+    f.write(f"SARIMA RMSE: {rmse_sarima:.4f}\n")
+    f.write(f"Improvement: {rmse_improvement:.2f}%\n\n")
+    f.write("="*80 + "\n")
+    f.write("Full Model Summary:\n")
+    f.write("="*80 + "\n")
+    f.write(str(best_model_sarima.summary()))
+ 
+print("✓ Model summary saved to 'sarima_model_summary.txt'")
+ 
+print("\n" + "="*80)
+print("SARIMA ANALYSIS COMPLETE!")
+print("="*80)
+print("\nGenerated files:")
+print("  1. sarima_comparison_results.csv - Detailed forecast data")
+print("  2. sarima_model_summary.txt - Model summary and metrics")
