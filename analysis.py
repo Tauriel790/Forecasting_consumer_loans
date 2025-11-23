@@ -842,6 +842,7 @@ if sarima_better_count >= 3:
 
 #-------------------------------------------------------------------------------------
 # SARIMA VISUALIZATION
+#-------------------------------------------------------------------------------------
 plt.close('all')
 
 print("\n" + "=" * 80)
@@ -965,3 +966,625 @@ print("="*80)
 print("\nGenerated files:")
 print("  1. sarima_comparison_results.csv - Detailed forecast data")
 print("  2. sarima_model_summary.txt - Model summary and metrics")
+
+#-------------------------------------------------------------------------------------
+# SARIMAX MODEL WITH EXOGENOUS VARIABLES
+#-------------------------------------------------------------------------------------
+
+print("\n" + "=" * 80)
+print("SARIMAX MODEL WITH EXOGENOUS VARIABLES")
+print("=" * 80)
+
+# Load exogenous variables
+fedfunds = pd.read_csv('FEDFUNDS.csv')
+unrate = pd.read_csv('UNRATE.csv')
+
+# Convert dates and set index
+fedfunds['observation_date'] = pd.to_datetime(fedfunds['observation_date'])
+fedfunds.set_index('observation_date', inplace=True)
+
+unrate['observation_date'] = pd.to_datetime(unrate['observation_date'])
+unrate.set_index('observation_date', inplace=True)
+
+# Rename columns for clarity
+fedfunds.columns = ['FedFunds_Rate']
+unrate.columns = ['Unemployment_Rate']
+
+print("Exogenous variables loaded successfully.")
+print(f" Federal Funds Rate : {len(fedfunds)} observations")
+print(f" Unemployment Rate  : {len(unrate)} observations")
+
+# Merge exogenous variables with main dataset
+data_exog = data[['CCLACBM027NBOG']].copy()
+data_exog = data_exog.join(fedfunds, how='left')
+data_exog = data_exog.join(unrate, how='left')
+
+# Forward fill missing values
+data_exog.fillna(method='ffill', inplace=True)
+
+print("\nMerged dataset shape:", data_exog.shape)
+print("\nFirst few rows:")
+print(data_exog.head())
+
+# Check for missing values
+print("\nMissing values:")
+print(data_exog.isnull().sum())
+
+#-------------------------------------------------------------------------------------
+# EDA FOR EXOGENOUS VARIABLES
+#-------------------------------------------------------------------------------------
+
+plt.close('all')
+fig, axes = plt.subplots(3, 1, figsize=(14, 12))
+
+# Consumer Credit
+axes[0].plot(data_exog.index, data_exog['CCLACBM027NBOG'], 
+             color='steelblue', linewidth=2)
+axes[0].set_title('Consumer Credit Card Loans', fontsize=12, fontweight='bold')
+axes[0].set_ylabel('Billions of Dollars', fontsize=10)
+axes[0].grid(True, alpha=0.3)
+
+# Federal Funds Rate
+axes[1].plot(data_exog.index, data_exog['FedFunds_Rate'], 
+             color='darkorange', linewidth=2)
+axes[1].set_title('Federal Funds Rate', fontsize=12, fontweight='bold')
+axes[1].set_ylabel('Percentage (%)', fontsize=10)
+axes[1].grid(True, alpha=0.3)
+
+# Unemployment Rate
+axes[2].plot(data_exog.index, data_exog['Unemployment_Rate'], 
+             color='green', linewidth=2)
+axes[2].set_title('Unemployment Rate', fontsize=12, fontweight='bold')
+axes[2].set_ylabel('Percentage (%)', fontsize=10)
+axes[2].grid(True, alpha=0.3)
+
+# Fix overlapping dates
+fig.autofmt_xdate()
+ 
+# Reduce space between subplots
+fig.subplots_adjust(hspace=0.35)
+plt.show()  
+
+# Correlation analysis
+print("\n" + "=" * 80)
+print("CORRELATION ANALYSIS")
+print("=" * 80)
+
+correlation_matrix = data_exog.corr()
+print("\nCorrelation Matrix:")
+print(correlation_matrix)
+
+# Visualize correlation 
+plt.close('all')
+plt.figure(figsize=(8, 6))
+sns.heatmap(correlation_matrix, annot=True, cmap='coolwarm', center=0, 
+            square =True, linewidth=1, cbar_kws={"shrink": 0.8})
+plt.title('Correlation Matrix (Consumer Credits & Exogenous Variables)', 
+          fontsize=14, fontweight='bold')
+plt.tight_layout()
+plt.show()
+
+#-------------------------------------------------------------------------------------
+# SPLIT DATA WITH EXOGENOUS VARIABLES
+#------------------------------------------------------------------------------------
+
+# Train-test split (80/20)
+train_exog = data_exog[:train_size]
+test_exog = data_exog[train_size:]
+
+print("\n" + "=" * 80)
+print("TRAIN-TEST SPLIT WITH EXOGENOUS VARIABLES")
+print("=" * 80)
+print(f"Train set: {len(train_exog)} observations")
+print(f"Test set: {len(test_exog)} observations")
+
+# Separate target and exogenous variables
+y_train = train_exog['CCLACBM027NBOG']
+x_train = train_exog[['FedFunds_Rate', 'Unemployment_Rate']]
+
+y_test = test_exog['CCLACBM027NBOG']
+x_test = test_exog[['FedFunds_Rate', 'Unemployment_Rate']]
+
+#-------------------------------------------------------------------------------------
+# SARIMAX MODEL SELECTION
+#------------------------------------------------------------------------------------
+
+print("\n" + "=" * 80)
+print("SEARCHING FOR OPTIMAL SARIMAX PARAMETERS")
+print("=" * 80)
+
+best_aic_sarimax = np.inf
+best_bic_sarimax = np.inf
+best_order_sarimax = None
+best_seasonal_order_sarimax = None
+best_model_sarimax = None
+
+#Test similar orders as SARIMA, but now with exogenous variables
+
+orders_to_test_sarimax = [
+    # (p, d, q), (P, D, Q, m)
+    ((0, 1, 1), (1, 0, 1, 12)),
+    ((0, 1, 1), (0, 1, 1, 12)),
+    ((0, 1, 1), (1, 1, 0, 12)),
+    ((1, 1, 0), (1, 0, 1, 12)),
+    ((1, 1, 1), (1, 0, 1, 12)),
+    ((1, 1, 1), (1, 1, 1, 12)),
+    ((0, 1, 2), (1, 0, 1, 12)),
+    ((2, 1, 0), (1, 0, 1, 12)),
+    ((1, 1, 0), (1, 1, 1, 12)),
+    ((0, 1, 1), (2, 0, 1, 12)), 
+]
+
+print("\nTesting SARIMAX orders with exogenous variables...")
+print(f"{'Non-seasonal':<15} {'Seasonal':<20} {'AIC':<12} {'BIC':<12} {'Status'}")
+print("-" * 75)
+
+for order, seasonal_order in orders_to_test_sarimax:
+    try:
+        # Fit SARIMAX model with exogenous variables
+        model = SARIMAX(y_train,
+                        exog = x_train,
+                        order = order,
+                        seasonal_order = seasonal_order,
+                        enforce_stationarity = False,
+                        enforce_invertibility = False)
+        fitted = model.fit(disp = False, maxiter=200)
+
+        print(f"{str(order):<15} {str(seasonal_order):<20} {fitted.aic:<12.2f} {fitted.bic:<12.2f}  {'✓'}")
+
+        # Track best model by BIC
+        if fitted.bic < best_bic_sarimax:
+            best_bic_sarimax = fitted.bic
+            best_aic_sarimax = fitted.aic
+            best_order_sarimax = order
+            best_seasonal_order_sarimax = seasonal_order
+            best_model_sarimax = fitted
+
+    except Exception as e:
+        print(f"{str(order):<15} {str(seasonal_order):<20} {'Failed':<12} {'Failed':<12} {'✗'} ")
+        continue
+
+print("\n" + "=" * 80)
+print("BEST SARIMAX MODEL SELECTED")
+print("=" * 80)
+print(f"Best SARIMAX order: {best_order_sarimax}")
+print(f"Best SARIMAX seasonal order: {best_seasonal_order_sarimax}")
+print(f"Best SARIMAX AIC: {best_aic_sarimax:.2f}")
+print(f"Best SARIMAX BIC: {best_bic_sarimax:.2f}")
+
+#-------------------------------------------------------------------------------------
+# SARIMAX MODEL DIAGNOSTICS
+#-------------------------------------------------------------------------------------
+
+print("\n" + "=" *80)
+print("SARIMAX MODEL SUMMARY")
+print("=" * 80)
+print(best_model_sarimax.summary())
+
+# Coefficient interpretation
+print("\n" + "=" * 80)
+print("EXOGENOUS VARIABLE COEFFICIENTS")
+print("=" * 80)
+params = best_model_sarimax.params
+print("\nFederal Funds Rate Coefficient:", params.get('FedFunds_Rate', 'N/A'))
+print("Unemployment Rate Coefficient:", params.get('Unemployment_Rate', 'N/A'))
+print("\nInterpretation:")
+print(" - Positive coefficient: Variable increase → Credit increases")
+print(" - Negative coefficient: Variable increase → Credit decreases")
+
+# Residual diagnostics
+residuals_sarimax = best_model_sarimax.resid
+
+print("\n" + "=" * 80)
+print("SARIMAX RESIDUAL DIAGNOSTICS")
+print("=" * 80)
+print(f"Mean of residuals: {residuals_sarimax.mean():.4f}")
+print(f"Std of residuals: {residuals_sarimax.std():.4f}")
+
+# Plot diagnostics
+plt.close('all')
+fig, axes = plt.subplots(2, 2, figsize = (12, 8))
+
+# Residuals over time
+axes[0, 0].plot(residuals_sarimax, linewidth = 1)
+axes[0, 0].axhline(y = 0, color = 'red', linestyle = '--', linewidth = 1)
+axes[0, 0].set_title(f'SARIMAX{best_order_sarimax}{best_seasonal_order_sarimax} Residuals', 
+                     fontsize = 12, fontweight = 'bold')
+axes[0, 0].set_xlabel('Date')
+axes[0, 0].set_ylabel('Residuals')  
+axes[0, 0].grid(True, alpha = 0.3)
+
+# Histogram of residuals
+axes[0, 1].hist(residuals_sarimax, bins = 30, edgecolor = 'black', 
+                alpha = 0.7, color = 'purple')
+axes[0, 1].set_title('Distribution of Residuals', fontsize = 12, fontweight = 'bold')
+axes[0, 1].set_xlabel('Residuals')
+axes[0, 1].set_ylabel('Frequency')
+axes[0, 1].grid(True, alpha = 0.3)  
+
+# ACF of residuals
+plot_acf(residuals_sarimax, lags = 40, ax = axes[1, 0])
+axes[1, 0].set_title ("ACF of Residuals", fontsize = 12, fontweight = 'bold')
+axes[1, 0].set_ylim(-0.3, 0.3)
+
+# Q-Q plot
+stats.probplot(residuals_sarimax, dist = 'norm', plot = axes[1, 1])
+axes[1, 1].set_title('Q-Q Plot', fontsize = 12, fontweight = 'bold')
+axes[1, 1].grid(True, alpha = 0.3)
+
+plt.tight_layout()
+plt.show()
+print("\nSARIMAX diagnostic plots complete.")
+
+# ---------------------------------------------------------------------------------------
+# SARIMAX ONE-STEP-AHEAD FORECASTING    
+# ---------------------------------------------------------------------------------------
+
+print("\n" + "=" * 80)
+print("GENERATING SARIMAX ONE-STEP-AHEAD FORECASTS")
+print("=" * 80)
+
+sarimax_forecasts = []
+sarimax_actuals = []
+
+print(f"Generating {len(test_exog)} one-step-ahead forecasts using rolling window with exogenous variables...")
+
+for i in range(len(test_exog)):
+   
+    # Extend training data 
+    y_train_extended = pd.concat([y_train, y_test[:i]])
+    x_train_extended = pd.concat([x_train, x_test[:i]])
+
+    #Get next observation's exogenous variables
+    x_next = x_test.iloc[i:i+1]
+
+    # Fit SARIMAX model
+    model = SARIMAX(y_train_extended,
+                    exog = x_train_extended,
+                    order = best_order_sarimax,
+                    seasonal_order = best_seasonal_order_sarimax,
+                    enforce_stationarity = False,
+                    enforce_invertibility = False)
+    fitted = model.fit(disp = False, maxiter=200)
+
+    # One-step-ahead forecast
+    forecast = fitted.forecast(steps = 1, exog = x_next)
+
+    forecast_value = float(forecast.iloc[0])
+    actual_value = float(y_test.iloc[i])
+
+    sarimax_forecasts.append(forecast_value)
+    sarimax_actuals.append(actual_value)
+
+    if (i + 1) % 10 == 0:
+        print(f"Completed {i + 1} / {len(test_exog)} forecasts")
+
+print("SARIMAX forecasts complete.")
+
+# Convert to numpy arrays
+sarimax_forecasts = np.array(sarimax_forecasts)
+sarimax_actuals = np.array(sarimax_actuals)
+
+#-------------------------------------------------------------------------------------------
+# SARIMAX FORECAST EVALUATION
+#-------------------------------------------------------------------------------------------
+
+print("\n" + "=" * 80)
+print("SARIMAX FORECAST EVALUATION METRICS")
+print("=" * 80)
+
+# Calculate metrics
+rmse_sarimax = np.sqrt(mean_squared_error(sarimax_actuals, sarimax_forecasts))
+mae_sarimax = mean_absolute_error(sarimax_actuals, sarimax_forecasts)
+mape_sarimax = np.mean(np.abs((sarimax_actuals - sarimax_forecasts) / sarimax_actuals)) * 100
+mse_sarimax = mean_squared_error(sarimax_actuals, sarimax_forecasts)
+
+print(f"\nSARIMAX{best_order_sarimax}{best_seasonal_order_sarimax} Performance:")
+print(f"  RMSE: {rmse_sarimax:.4f} billion dollars")
+print(f"  MAE: {mae_sarimax:.4f} billion dollars")
+print(f"  MAPE: {mape_sarimax:.4f}%")           
+print(f"  MSE: {mse_sarimax:.4f}")
+
+# ---------------------------------------------------------------------------------------
+# COMPREHENSIVE MODEL COMPARISON
+# ---------------------------------------------------------------------------------------
+
+print("\n" + "=" * 80)
+print("COMPREHENSIVE MODEL COMPARISON")
+print("=" * 80)
+
+comparison_full = pd.DataFrame({
+    'Metric': ['RMSE', 'MAE', 'MAPE (%)', 'MSE','BIC'],
+    'ARIMA(0,1,1)': [rmse, mae, mape, mse, best_bic],
+    f'SARIMA{best_order_sarima}': [rmse_sarima, mae_sarima, mape_sarima, mse_sarima, best_bic_sarima],
+    f'SARIMAX{best_order_sarimax}': [rmse_sarimax, mae_sarimax, mape_sarimax, mse_sarimax, best_bic_sarimax]
+})
+
+print("\n", comparison_full.to_string(index = False))
+
+# Calculate improvements
+print("\n" + "=" * 80)
+print("SARIMAX IMPROVEMENTS OVER BASELINE MODELS")
+print("=" * 80)
+
+rmse_improvement_vs_arima = ((rmse - rmse_sarimax)/rmse) * 100
+rmse_improvement_vs_sarima = ((rmse_sarima - rmse_sarimax)/rmse_sarima) * 100
+
+mae_improvement_vs_arima = ((mae - mae_sarimax)/mae) * 100
+mae_improvement_vs_sarima = ((mae_sarima - mae_sarimax)/mae_sarima) * 100
+
+mape_improvement_vs_arima = ((mape - mape_sarimax)/mape) * 100
+mape_improvement_vs_sarima = ((mape_sarima - mape_sarimax)/mape_sarima) * 100
+
+print("\n" + "=" * 80)
+print("SARIMAX IMPROVEMENTS OVER BASELINE MODELS")
+print("=" * 80)
+
+print(f"\nRMSE Improvement over ARIMA: {rmse_improvement_vs_arima:.2f}%")
+print(f"RMSE Improvement over SARIMA: {rmse_improvement_vs_sarima:.2f}%")
+
+print(f"MAE Improvement over ARIMA: {mae_improvement_vs_arima:.2f}%")
+print(f"MAE Improvement over SARIMA: {mae_improvement_vs_sarima:.2f}%") 
+
+print(f"\nMAPE Improvement over ARIMA: {mape_improvement_vs_arima:.2f}%")
+print(f"MAPE Improvement over SARIMA: {mape_improvement_vs_sarima:.2f}%")
+
+# Detailed improvement assessment !!!!!KINDA UNNECESSARY!!!!!
+
+print("\n" + "=" * 80)
+print("IMPROVEMENT ASSESSMENT")
+print("=" * 80)
+
+if rmse_improvement_vs_arima > 0:
+    print(f"✓ SARIMAX improved RMSE by {rmse_improvement_vs_arima:.2f}% over ARIMA.")
+else:
+    print(f"✗ SARIMAX RMSE worse by {abs(rmse_improvement_vs_arima):.2f}% compared to ARIMA.")
+
+if rmse_improvement_vs_sarima > 0:
+    print(f"✓ SARIMAX improved RMSE by {rmse_improvement_vs_sarima:.2f}% over SARIMA.")
+else:
+    print(f"✗ SARIMAX RMSE worse by {abs(rmse_improvement_vs_sarima):.2f}% compared to SARIMA.")
+
+if mae_improvement_vs_arima > 0:
+    print(f"✓ SARIMAX improved MAE by {mae_improvement_vs_arima:.2f}% over ARIMA.")
+else:
+    print(f"✗ SARIMAX MAE worse by {abs(mae_improvement_vs_arima):.2f}% compared to ARIMA.")
+
+if mae_improvement_vs_sarima > 0:
+    print(f"✓ SARIMAX improved MAE by {mae_improvement_vs_sarima:.2f}% over SARIMA.")
+else:
+    print(f"✗ SARIMAX MAE worse by {abs(mae_improvement_vs_sarima):.2f}% compared to SARIMA.")
+
+if mape_improvement_vs_arima > 0:
+    print(f"✓ SARIMAX improved MAPE by {mape_improvement_vs_arima:.2f}% over ARIMA.")
+else:
+    print(f"✗ SARIMAX MAPE worse by {abs(mape_improvement_vs_arima):.2f}% compared to ARIMA.")
+
+if mape_improvement_vs_sarima > 0:
+    print(f"✓ SARIMAX improved MAPE by {mape_improvement_vs_sarima:.2f}% over SARIMA.")
+else:
+    print(f"✗ SARIMAX MAPE worse by {abs(mape_improvement_vs_sarima):.2f}% compared to SARIMA.")
+
+# Finding the best model overall
+# Count which model wins on each metric
+model_scores = {
+    'ARIMA': 0,
+    'SARIMA': 0,
+    'SARIMAX': 0
+}
+
+# Score based on RMSE
+if rmse <= rmse_sarima and rmse <= rmse_sarimax:
+    model_scores['ARIMA'] += 1
+elif rmse_sarima <= rmse and rmse_sarima <= rmse_sarimax:
+    model_scores['SARIMA'] += 1
+else:
+    model_scores['SARIMAX'] += 1
+
+# Score based on MAE
+if mae <= mae_sarima and mae <= mae_sarimax:
+    model_scores['ARIMA'] += 1
+elif mae_sarima <= mae and mae_sarima <= mae_sarimax:
+    model_scores['SARIMA'] += 1
+else:
+    model_scores['SARIMAX'] += 1
+
+# Score based on MAPE
+if mape <= mape_sarima and mape <= mape_sarimax:
+    model_scores['ARIMA'] += 1
+elif mape_sarima <= mape and mape_sarima <= mape_sarimax:
+    model_scores['SARIMA'] += 1
+else:
+    model_scores['SARIMAX'] += 1
+
+# Score based on BIC (lower is better)
+if best_bic <= best_bic_sarima and best_bic <= best_bic_sarimax:
+    model_scores['ARIMA'] += 1
+elif best_bic_sarima <= best_bic and best_bic_sarima <= best_bic_sarimax:
+    model_scores['SARIMA'] += 1
+else:
+    model_scores['SARIMAX'] += 1
+
+print("\n" + "=" * 80)
+print("MODEL PERFORMANCE SCORECARD")
+print("=" * 80)
+print(f"ARIMA wins on {model_scores['ARIMA']}/4 metrics")
+print(f"SARIMA wins on {model_scores['SARIMA']}/4 metrics")
+print(f"SARIMAX wins on {model_scores['SARIMAX']}/4 metrics")
+
+# Determine overall winner
+best_model_overall = max(model_scores, key=model_scores.get)
+print(f"\n{'='*80}")
+print(f"RECOMMENDED MODEL: {best_model_overall}")
+print(f"{'='*80}")
+
+if best_model_overall == 'SARIMAX':
+    print("SARIMAX is the superior model, winning on the most evaluation criteria.")
+    print("The exogenous variables (Fed Funds Rate, Unemployment) add predictive value.")
+elif best_model_overall == 'SARIMA':
+    print("SARIMA is the superior model, winning on the most evaluation criteria.")
+    print("Seasonal patterns are important; exogenous variables don't add enough value.")
+else:
+    print("ARIMA (simple benchmark) is the superior model.")
+    print("More complex models don't improve forecast accuracy significantly.")
+
+#-------------------------------------------------------------------------------------
+# VISUALIZATION: SARIMAX vs OTHER MODELS
+#-------------------------------------------------------------------------------------
+
+plt.close('all')
+print("\n" + "=" * 80)
+print("GENERATING COMPREHENSIVE FORECAST COMPARISON PLOTS")
+print("=" * 80)
+
+fig, axes = plt.subplots(4, 1, figsize=(10, 12))     
+
+# Plot 1: Full series with all forecasts
+axes[0].plot(train.index, train['CCLACBM027NBOG'],
+            label='Training Data', color='steelblue', linewidth=2, alpha=0.7)
+axes[0].plot(test.index, sarimax_actuals,
+            label='Actual Test Data', color='black', linewidth=2.5)
+axes[0].plot(test.index, arima_forecasts,
+             label=f'ARIMA{best_order}',linewidth=2, 
+             linestyle='--', color='darkorange', alpha=0.7)
+axes[0].plot(test.index, sarima_forecasts,
+             label=f'SARIMA{best_order_sarima}{best_seasonal_order}',
+                linewidth=2, linestyle='--', color='green', alpha=0.7)
+axes[0].plot(test.index, sarimax_forecasts,
+             label=f'SARIMAX{best_order_sarimax}{best_seasonal_order_sarimax}',
+             linewidth=2, linestyle='--', color='purple', alpha=0.8)
+axes[0].axvline(x=train.index[-1], color='gray', linestyle=':', linewidth=2)
+axes[0].set_title('All Models: Forecast Comparison', fontsize=14, fontweight='bold')
+axes[0].set_ylabel('Billions', fontsize=12)
+axes[0].legend(loc='best', fontsize=9)
+axes[0].grid(True, alpha=0.3)
+
+# Plot 2: Test period detailed view
+axes[1].plot(test.index, sarimax_actuals,
+             label='Actual', color='black', linewidth=2.5, marker='o', markersize=4)
+axes[1].plot(test.index, arima_forecasts,  
+             label='ARIMA', color='darkorange', linestyle='--', linewidth=2, 
+             marker='s', markersize=3, alpha=0.7)
+axes[1].plot(test.index, sarima_forecasts,  
+             label='SARIMA', color='green', linestyle='--', linewidth=2,
+             marker='^', markersize=3, alpha=0.7)   
+axes[1].plot(test.index, sarimax_forecasts,  
+             label='SARIMAX', color='purple', linestyle='--', linewidth=2,
+             marker='d', markersize=3, alpha=0.8)
+axes[1].set_title('Test Period: Detailed Model Comparison', 
+                  fontsize=14, fontweight='bold')
+axes[1].set_ylabel('Billions', fontsize=12)
+axes[1].legend(loc='best', fontsize=9)
+axes[1].grid(True, alpha=0.3)
+
+# Plot 3: Forecast Error Comparison
+sarimax_errors= sarimax_actuals - sarimax_forecasts
+
+axes[2].plot(test.index, arima_errors,
+             label='ARIMA Error', linewidth=2, color='darkorange', 
+             marker= 'o', markersize = 3, alpha=0.7)
+axes[2].plot(test.index, sarima_errors,
+             label='SARIMA Error', linewidth=2, color='green',
+             marker='s', markersize=3, alpha=0.7)
+axes[2].plot(test.index, sarimax_errors,
+             label='SARIMAX Error', linewidth=2, color='purple',
+             marker='d', markersize=3, alpha=0.8)
+axes[2].axhline(y=0, color='black', linestyle='-', linewidth=1)
+axes[2].set_title('Forecast Error: Model Comparison', 
+                  fontsize=14, fontweight='bold')
+axes[2].set_ylabel('Error (Billions)', fontsize=12)
+axes[2].legend(loc='best', fontsize=9)
+axes[2].grid(True, alpha=0.3)
+
+# Plot 4: Absolute Error Comparison
+axes[3].bar(np.arange(len(test)) - 0.2, np.abs(arima_errors), width=0.2,
+            label='ARIMA Abs Error', color='darkorange', alpha=0.7)
+axes[3].bar(np.arange(len(test)) , np.abs(sarima_errors), width=0.2,
+            label='SARIMA Abs Error', color='green', alpha=0.7)
+axes[3].bar(np.arange(len(test)) + 0.2, np.abs(sarimax_errors), width=0.2,
+            label='SARIMAX Abs Error', color='purple', alpha=0.7)
+axes[3].set_title('Absolute Forecast Error: Model Comparison', 
+                  fontsize=14, fontweight='bold')
+axes[3].set_xlabel('Forecast Period', fontsize=12)
+axes[3].set_ylabel('Absolute Error(Billions)', fontsize=12)
+axes[3].legend(loc='best', fontsize=9)
+axes[3].grid(True, alpha=0.3)
+
+# Make date labels readable
+fig.autofmt_xdate(rotation=45, ha='right')
+plt.subplots_adjust(
+    left=0.08,
+    right=0.92,
+    top=0.96,
+    bottom=0.10,
+    hspace=0.70
+
+)
+plt.show()
+
+# -------------------------------------------------------------------------------------
+# SAVE SARIMAX RESULTS
+#---------------------------------------------------------------------------------------------------
+
+# Save forecast results
+results_sarimax_df = pd.DataFrame({
+    'Date': test.index,
+    'Actual': sarimax_actuals,
+    'ARIMA_Forecast': arima_forecasts,
+    'SARIMA_Forecast': sarima_forecasts,
+    'SARIMAX_Forecast': sarimax_forecasts,
+    'ARIMA_Error': arima_errors,
+    'SARIMA_Error': sarima_errors,
+    'SARIMAX_Error': sarimax_errors,
+    'ARIMA_Abs_Error': np.abs(arima_errors),
+    'SARIMA_Abs_Error': np.abs(sarima_errors),
+    'SARIMAX_Abs_Error': np.abs(sarimax_errors),
+    'FedFunds_Rate': x_test['FedFunds_Rate'].values,
+    'Unemployment_Rate': x_test['Unemployment_Rate'].values
+})
+
+results_sarimax_df.to_csv('sarimax_full_comparison_results.csv', index=False)
+print("\nResults saved to 'sarimax_full_comparison_results.csv'")
+
+# Save model summary
+with open('sarimax_model_summary.txt', 'w') as f:
+    f.write("=" * 80 + "\n")
+    f.write("SARIMAX MODEL RESULTS WITH EXOGENOUS VARIABLES\n")
+    f.write("=" * 80 + "\n\n")
+    f.write(f"Best SARIMAX Model: {best_order_sarimax}{best_seasonal_order_sarimax}\n")
+    f.write(f"Exogenous Variables: Federal Funds Rate, Unemployment Rate\n\n")
+    f.write(f"AIC: {best_aic_sarimax:.2f}\n")
+    f.write(f"BIC: {best_bic_sarimax:.2f}\n\n")
+    f.write("Forecast Performance:\n")
+    f.write(f"  RMSE: {rmse_sarimax:.4f}\n")
+    f.write(f"  MAE: {mae_sarimax:.4f}\n")
+    f.write(f"  MAPE: {mape_sarimax:.4f}%\n\n")
+    f.write("=" * 80 + "\n")
+    f.write("COMPARISON WITH OTHER MODELS:\n")
+    f.write("=" * 80 + "\n")
+    f.write(f"ARIMA RMSE: {rmse:.4f}\n")
+    f.write(f"SARIMA RMSE: {rmse_sarima:.4f}\n")
+    f.write(f"SARIMAX RMSE: {rmse_sarimax:.4f}\n\n")
+    f.write(f"Improvement over ARIMA: {rmse_improvement_vs_arima:.2f}%\n")
+    f.write(f"Improvement over SARIMA: {rmse_improvement_vs_sarima:.2f}%\n\n")
+    f.write(f"Overall Best Model: {best_model_overall}\n")
+    f.write(f"Model Scores:\nARIMA: {model_scores['ARIMA']}/4, \nSARIMA: {model_scores['SARIMA']}/4, \nSARIMAX: {model_scores['SARIMAX']}/4\n\n")
+    f.write("=" * 80 + "\n")
+    f.write("Full Model Summary:\n")
+    f.write("=" * 80 + "\n")
+    f.write(str(best_model_sarimax.summary()))
+
+print("✓ Model summary saved to 'sarimax_model_summary.txt'")
+
+print("\n" + "=" * 80)
+print("SARIMAX ANALYSIS COMPLETE!")
+print("=" * 80)
+print("\nGenerated files:")
+print("  1. sarimax_full_comparison_results.csv - Detailed forecast data")
+print("  2. sarimax_model_summary.txt - Model summary and metrics")
+print("\nKey Findings:")
+print(f"  - Best performing model: {best_model_overall}")
+print(f"  - ARIMA RMSE: {rmse:.4f}")
+print(f"  - SARIMA RMSE: {rmse_sarima:.4f}")
+print(f"  - SARIMAX RMSE: {rmse_sarimax:.4f}")
+print(f"  - SARIMAX includes Fed Funds Rate & Unemployment Rate as predictors")
