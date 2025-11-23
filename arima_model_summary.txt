@@ -18,8 +18,8 @@ Full Model Summary:
 ==============================================================================
 Dep. Variable:         CCLACBM027NBOG   No. Observations:                  243
 Model:                 ARIMA(0, 1, 1)   Log Likelihood               -1049.672
-Date:                Sat, 22 Nov 2025   AIC                           2103.345
-Time:                        16:20:33   BIC                           2110.323
+Date:                Sun, 23 Nov 2025   AIC                           2103.345
+Time:                        16:21:51   BIC                           2110.323
 Sample:                    07-01-2000   HQIC                          2106.156
                          - 09-01-2020                                         
 Covariance Type:                  opg                                         

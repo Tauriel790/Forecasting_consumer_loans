@@ -25,8 +25,8 @@ Full Model Summary:
 ==========================================================================================
 Dep. Variable:                     CCLACBM027NBOG   No. Observations:                  243
 Model:             SARIMAX(0, 1, 1)x(0, 1, 1, 12)   Log Likelihood                -944.148
-Date:                            Sat, 22 Nov 2025   AIC                           1894.297
-Time:                                    16:27:18   BIC                           1904.423
+Date:                            Sun, 23 Nov 2025   AIC                           1894.297
+Time:                                    16:24:03   BIC                           1904.423
 Sample:                                07-01-2000   HQIC                          1898.388
                                      - 09-01-2020                                         
 Covariance Type:                              opg                                         
