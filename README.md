@@ -60,4 +60,4 @@ SARIMAX incorporating macroeconomic variables achieved the best overall performa
 | `sarimax_full_comparison_results.csv` | Full model comparison |
 
 ## Report
-A detailed project report is available in `Forecasting_Presentation.pdf`.
+A detailed project report is available in `Forecasting Presentation.pdf`.
